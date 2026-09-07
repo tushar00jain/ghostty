@@ -99,6 +99,7 @@ struct NewTerminalIntent: AppIntent {
         } else {
             parent = nil
         }
+        let parentController = parent.flatMap { BaseTerminalController.controller(owning: $0) }
 
         defer {
             if !NSApp.isActive {
@@ -110,7 +111,7 @@ struct NewTerminalIntent: AppIntent {
             let newController = TerminalController.newWindow(
                 ghostty,
                 withBaseConfig: config,
-                withParent: parent?.window)
+                withParent: parentController?.window)
             if let view = newController.surfaceTree.root?.leftmostLeaf() {
                 return .result(value: await TerminalEntity(view: view))
             }
@@ -118,15 +119,16 @@ struct NewTerminalIntent: AppIntent {
         case .tab:
             let newController = TerminalController.newTab(
                 ghostty,
-                from: parent?.window,
-                withBaseConfig: config)
+                from: parentController?.window,
+                withBaseConfig: config,
+                after: parentController as? TerminalController)
             if let view = newController?.surfaceTree.root?.leftmostLeaf() {
                 return .result(value: await TerminalEntity(view: view))
             }
 
         case .splitLeft, .splitRight, .splitUp, .splitDown:
             guard let parent,
-                  let controller = parent.window?.windowController as? BaseTerminalController else {
+                  let controller = BaseTerminalController.controller(owning: parent) else {
                 throw GhosttyIntentError.surfaceNotFound
             }
 

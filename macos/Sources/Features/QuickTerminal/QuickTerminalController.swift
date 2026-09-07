@@ -91,6 +91,7 @@ class QuickTerminalController: BaseTerminalController {
             selector: #selector(windowDidResize(_:)),
             name: NSWindow.didResizeNotification,
             object: nil)
+        _ = TerminalWindowHost(self)
     }
 
     required init?(coder: NSCoder) {
@@ -114,7 +115,7 @@ class QuickTerminalController: BaseTerminalController {
 
         // The controller is the window delegate so we can detect events such as
         // window close so we can animate out.
-        window.delegate = self
+        window.delegate = windowHost
 
         // The quick window is restored by `screenStateCache`.
         // We disable this for better control
@@ -137,9 +138,7 @@ class QuickTerminalController: BaseTerminalController {
         }
 
         // Setup our content
-        window.contentView = TerminalViewContainer {
-            TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
-        }
+        // The window host installs this controller's retained terminal view.
 
         // Clear out our frame at this point, the fixup from above is complete.
         if let qtWindow = window as? QuickTerminalWindow {
@@ -733,7 +732,7 @@ class QuickTerminalController: BaseTerminalController {
     @objc private func onNewTab(notification: SwiftUI.Notification) {
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
         guard let window = surfaceView.window else { return }
-        guard window.windowController is QuickTerminalController else { return }
+        guard window.terminalContentController is QuickTerminalController else { return }
         // Tabs aren't supported with Quick Terminals or derivatives
         showNoNewTabAlert()
     }
