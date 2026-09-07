@@ -1,6 +1,28 @@
 import SwiftUI
 import GhosttyKit
 import os
+import Combine
+
+/// The view controller retains its view, so SwiftUI must not retain the controller back.
+final class TerminalViewReference: TerminalViewModel {
+    private weak var controller: BaseTerminalController?
+    let objectWillChange: ObservableObjectPublisher
+
+    init(_ controller: BaseTerminalController) {
+        self.controller = controller
+        objectWillChange = controller.objectWillChange
+    }
+
+    var surfaceTree: SplitTree<Ghostty.SurfaceView> {
+        get { controller?.surfaceTree ?? .init() }
+        set { controller?.surfaceTree = newValue }
+    }
+    var commandPaletteIsShowing: Bool {
+        get { controller?.commandPaletteIsShowing ?? false }
+        set { controller?.commandPaletteIsShowing = newValue }
+    }
+    var updateOverlayIsVisible: Bool { controller?.updateOverlayIsVisible ?? false }
+}
 
 /// This delegate is notified of actions and property changes regarding the terminal view. This
 /// delegate is optional and can be used by a TerminalView caller to react to changes such as

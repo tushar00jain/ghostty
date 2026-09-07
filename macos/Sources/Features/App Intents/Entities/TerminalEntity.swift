@@ -69,7 +69,7 @@ struct TerminalEntity: AppEntity {
         }
 
         // Determine the kind based on the window controller type
-        if view.window?.windowController is QuickTerminalController {
+        if view.window?.terminalContentController is QuickTerminalController {
             self.kind = .quick
         } else {
             self.kind = .normal
@@ -122,7 +122,7 @@ struct TerminalEntity: AppEntity {
         // Wait for the title and pwd then get latest pid and screenshots.
         // This should gave SurfaceView enough time to layout in the window and we can get the most recent process's PID
         // Determine the kind based on the window controller type
-        if view.window?.windowController is QuickTerminalController {
+        if view.window?.terminalContentController is QuickTerminalController {
             self.kind = .quick
         } else {
             self.kind = .normal
@@ -183,7 +183,7 @@ struct TerminalQuery: EntityStringQuery, EnumerableEntityQuery {
         // Find all of our terminal windows. This will include the quick terminal
         // but only if it was previously opened.
         let controllers = NSApp.windows.compactMap {
-            $0.windowController as? BaseTerminalController
+            $0.terminalContentController
         }
 
         // Get all our surfaces

@@ -126,7 +126,7 @@ struct NewTerminalIntent: AppIntent {
 
         case .splitLeft, .splitRight, .splitUp, .splitDown:
             guard let parent,
-                  let controller = parent.window?.windowController as? BaseTerminalController else {
+                  let controller = BaseTerminalController.controller(owning: parent) else {
                 throw GhosttyIntentError.surfaceNotFound
             }
 

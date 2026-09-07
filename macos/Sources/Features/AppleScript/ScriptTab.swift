@@ -44,7 +44,7 @@ final class ScriptTab: NSObject {
     @objc(title)
     var title: String {
         guard NSApp.isAppleScriptEnabled else { return "" }
-        return controller?.window?.title ?? ""
+        return controller?.tabTitle ?? ""
     }
 
     /// Exposed as the AppleScript `index` property.
@@ -125,6 +125,7 @@ final class ScriptTab: NSObject {
             return nil
         }
 
+        if let controller { controller.windowHost?.select(controller) }
         tabContainerWindow.makeKeyAndOrderFront(nil)
         return nil
     }

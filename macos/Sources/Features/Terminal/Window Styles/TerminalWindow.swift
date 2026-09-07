@@ -55,7 +55,7 @@ class TerminalWindow: NSWindow {
 
     /// Gets the terminal controller from the window controller.
     var terminalController: TerminalController? {
-        windowController as? TerminalController
+        terminalContentController as? TerminalController
     }
 
     /// The color assigned to this window's tab. Setting this updates the tab color indicator
@@ -83,24 +83,9 @@ class TerminalWindow: NSWindow {
         // Notify that this terminal window has loaded
         NotificationCenter.default.post(name: Self.terminalDidAwake, object: self)
 
-        // This is fragile, but there doesn't seem to be an official API for customizing
-        // native tab bar menus.
-        tabMenuObserver = NotificationCenter.default.addObserver(
-            forName: Notification.Name(rawValue: "NSMenuWillOpenNotification"),
-            object: nil,
-            queue: .main
-        ) { [weak self] n in
-            guard let self, let menu = n.object as? NSMenu else { return }
-            self.configureTabContextMenuIfNeeded(menu)
-        }
-
-        // This is required so that window restoration properly creates our tabs
-        // again. I'm not sure why this is required. If you don't do this, then
-        // tabs restore as separate windows.
-        tabbingMode = .preferred
-        DispatchQueue.main.async {
-            self.tabbingMode = .automatic
-        }
+        // All terminal windows are eligible for the same native tab group.
+        tabbingIdentifier = "com.mitchellh.ghostty.terminal"
+        tabbingMode = .automatic
 
         // All new windows are based on the app config at the time of creation.
         guard let appDelegate = NSApp.delegate as? AppDelegate else { return }
@@ -237,7 +222,7 @@ class TerminalWindow: NSWindow {
             return
         }
 
-        guard let targetController = targetWindow.windowController as? BaseTerminalController else { return }
+        guard let targetController = targetWindow.terminalContentController else { return }
         targetController.promptTabTitle()
     }
 
@@ -717,7 +702,7 @@ extension TerminalWindow {
         let targetController = menu.items
             .first { $0.action == NSSelectorFromString("performClose:") }
             .flatMap { $0.target as? NSWindow }
-            .flatMap { $0.windowController as? TerminalController }
+            .flatMap { $0.terminalContentController as? TerminalController }
 
         // Close tabs to the right
         let item = NSMenuItem(title: "Close Tabs to the Right", action: #selector(TerminalController.closeTabsOnTheRight(_:)), keyEquivalent: "")
@@ -804,14 +789,14 @@ extension TerminalWindow: TabTitleEditorDelegate {
         _ editor: TabTitleEditor,
         canRenameTabFor targetWindow: NSWindow
     ) -> Bool {
-        targetWindow.windowController is BaseTerminalController
+        targetWindow.terminalContentController != nil
     }
 
     func tabTitleEditor(
         _ editor: TabTitleEditor,
         titleFor targetWindow: NSWindow
     ) -> String {
-        guard let targetController = targetWindow.windowController as? BaseTerminalController else {
+        guard let targetController = targetWindow.terminalContentController else {
             return targetWindow.title
         }
 
@@ -823,7 +808,7 @@ extension TerminalWindow: TabTitleEditorDelegate {
         didCommitTitle editedTitle: String,
         for targetWindow: NSWindow
     ) {
-        guard let targetController = targetWindow.windowController as? BaseTerminalController else { return }
+        guard let targetController = targetWindow.terminalContentController else { return }
         targetController.titleOverride = editedTitle.isEmpty ? nil : editedTitle
     }
 
@@ -831,14 +816,14 @@ extension TerminalWindow: TabTitleEditorDelegate {
         _ editor: TabTitleEditor,
         performFallbackRenameFor targetWindow: NSWindow
     ) {
-        guard let targetController = targetWindow.windowController as? BaseTerminalController else { return }
+        guard let targetController = targetWindow.terminalContentController else { return }
         targetController.promptTabTitle()
     }
 
     func tabTitleEditor(_ editor: TabTitleEditor, didFinishEditing targetWindow: NSWindow) {
         // After inline editing, the first responder is the window itself.
         // Restore focus to the terminal surface so keyboard input works.
-        guard let controller = windowController as? BaseTerminalController,
+        guard let controller = terminalContentController,
               let focusedSurface = controller.focusedSurface
         else { return }
         makeFirstResponder(focusedSurface)
