@@ -26,6 +26,7 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuSecureInput: NSMenuItem?
     @IBOutlet private var menuQuit: NSMenuItem?
 
+    @IBOutlet private var menuTabNavigation: NSMenu?
     @IBOutlet private var menuNewWindow: NSMenuItem?
     @IBOutlet private var menuNewTab: NSMenuItem?
     @IBOutlet private var menuSplitRight: NSMenuItem?
@@ -575,6 +576,11 @@ class AppDelegate: NSObject,
     }
 
     private func localEventKeyDown(_ event: NSEvent) -> NSEvent? {
+        if let window = NSApp.keyWindow, window.attachedSheet == nil,
+           window.terminalContentController is TerminalController,
+           menuTabNavigation?.performKeyEquivalent(with: event) == true {
+            return nil
+        }
         // If the tab overview is visible and escape is pressed, close it.
         // This can't POSSIBLY be right and is probably a FirstResponder problem
         // that we should handle elsewhere in our program. But this works and it
@@ -740,21 +746,18 @@ class AppDelegate: NSObject,
 
     @objc private func ghosttyNewTab(_ notification: Notification) {
         guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
-        guard let window = surfaceView.window else { return }
-
-        // We only want to listen to new tabs if the focused parent is
-        // a regular terminal controller.
-        guard window.windowController is TerminalController else { return }
+        guard let controller = BaseTerminalController.controller(owning: surfaceView) as? TerminalController,
+              let window = controller.window else { return }
 
         let configAny = notification.userInfo?[Ghostty.Notification.NewSurfaceConfigKey]
         let config = configAny as? Ghostty.SurfaceConfiguration
 
-        _ = TerminalController.newTab(ghostty, from: window, withBaseConfig: config)
+        _ = TerminalController.newTab(ghostty, from: window, withBaseConfig: config, after: controller)
     }
 
     private func setDockBadge() {
         let bellCount = NSApp.windows
-            .compactMap { $0.windowController as? BaseTerminalController }
+            .flatMap { $0.terminalContentControllers }
             .reduce(0) { $0 + ($1.bell ? 1 : 0) }
         let wantsBadge = ghostty.config.bellFeatures.contains(.attention) && bellCount > 0
         let label = wantsBadge ? (bellCount > 99 ? "99+" : String(bellCount)) : nil
@@ -1322,7 +1325,7 @@ extension AppDelegate: NSMenuItemValidation {
 extension AppDelegate {
     func terminate() -> NSApplication.TerminateReply {
         let controllersNeedConfirmation = NSApplication.shared.windows
-            .compactMap { $0.windowController as? BaseTerminalController }
+            .flatMap { $0.terminalContentControllers }
             .filter { !$0.windowCanBeClosedWithoutConfirmation() }
 
         guard !controllersNeedConfirmation.isEmpty else {
@@ -1373,7 +1376,7 @@ extension AppDelegate {
 
                 if [.OK, .alertFirstButtonReturn].contains(response) {
                     // Close this window and until next review is cancelled
-                    await controller.window?.close()
+                    await controller.windowHost?.remove(controller)
                     continue
                 } else {
                     await NSApp.reply(toApplicationShouldTerminate: false)

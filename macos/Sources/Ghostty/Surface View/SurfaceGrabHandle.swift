@@ -29,7 +29,7 @@ extension Ghostty {
             guard window.styleMask.contains(.fullScreen) else { return true }
 
             // If fullscreen, only show the handle if we have splits
-            guard let controller = window.windowController as? BaseTerminalController else { return false }
+            guard let controller = window.terminalContentController else { return false }
             return controller.surfaceTree.isSplit
         }
 

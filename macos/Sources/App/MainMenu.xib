@@ -14,6 +14,7 @@
         <customObject id="-3" userLabel="Application" customClass="NSObject"/>
         <customObject id="bbz-4X-AYv" userLabel="AppDelegate" customClass="AppDelegate" customModule="Ghostty" customModuleProvider="target">
             <connections>
+                <outlet property="menuTabNavigation" destination="tab-navigation-menu" id="tab-navigation-outlet"/>
                 <outlet property="menuAbout" destination="5kV-Vb-QxS" id="Y5y-UO-NK6"/>
                 <outlet property="menuBringAllToFront" destination="LE2-aR-0XJ" id="AP9-oK-60V"/>
                 <outlet property="menuChangeTabTitle" destination="iac-lh-Cl7" id="tId-v0-a3E"/>
@@ -379,6 +380,29 @@
                     <modifierMask key="keyEquivalentModifierMask"/>
                     <menu key="submenu" title="Window" systemMenu="window" id="Td7-aD-5lo">
                         <items>
+                            <menuItem title="Tab Navigation" id="tab-navigation-item">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <menu key="submenu" title="Tab Navigation" autoenablesItems="NO" id="tab-navigation-menu">
+                                    <items>
+                                        <menuItem title="Select Previous Tab" keyEquivalent="&#9;" id="previous-inner-tab">
+                                            <modifierMask key="keyEquivalentModifierMask" shift="YES" control="YES"/>
+                                            <connections><action selector="selectPreviousTerminalTab:" target="-1" id="previous-inner-action"/></connections>
+                                        </menuItem>
+                                        <menuItem title="Select Next Tab" keyEquivalent="&#9;" id="next-inner-tab">
+                                            <modifierMask key="keyEquivalentModifierMask" control="YES"/>
+                                            <connections><action selector="selectNextTerminalTab:" target="-1" id="next-inner-action"/></connections>
+                                        </menuItem>
+                                        <menuItem title="Select Previous Native Tab" keyEquivalent="[" id="previous-native-tab">
+                                            <modifierMask key="keyEquivalentModifierMask" shift="YES" command="YES"/>
+                                            <connections><action selector="selectPreviousTab:" target="-1" id="previous-native-action"/></connections>
+                                        </menuItem>
+                                        <menuItem title="Select Next Native Tab" keyEquivalent="]" id="next-native-tab">
+                                            <modifierMask key="keyEquivalentModifierMask" shift="YES" command="YES"/>
+                                            <connections><action selector="selectNextTab:" target="-1" id="next-native-action"/></connections>
+                                        </menuItem>
+                                    </items>
+                                </menu>
+                            </menuItem>
                             <menuItem title="Minimize" keyEquivalent="m" id="OY7-WF-poV">
                                 <connections>
                                     <action selector="performMiniaturize:" target="-1" id="VwT-WD-YPe"/>

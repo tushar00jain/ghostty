@@ -144,15 +144,11 @@ final class ScriptWindow: NSObject {
     private var controllers: [BaseTerminalController] {
         guard NSApp.isAppleScriptEnabled else { return [] }
         guard let primaryController else { return [] }
-        guard let window = primaryController.window else { return [primaryController] }
+        guard let tabGroup = primaryController.windowHost else { return [primaryController] }
 
-        if let tabGroup = window.tabGroup {
-            let groupControllers = tabGroup.windows.compactMap {
-                $0.windowController as? BaseTerminalController
-            }
-            if !groupControllers.isEmpty {
-                return groupControllers
-            }
+        let groupControllers = tabGroup.controllers
+        if !groupControllers.isEmpty {
+            return groupControllers
         }
 
         return [primaryController]
@@ -160,14 +156,13 @@ final class ScriptWindow: NSObject {
 
     /// Live selected controller for this scripting window.
     ///
-    /// AppKit tracks selected tab on `NSWindowTabGroup.selectedWindow`; for
-    /// non-tabbed windows we fall back to the primary controller.
+    /// The inner tab group tracks selection; for non-tabbed windows we
+    /// fall back to the primary controller.
     private var selectedController: BaseTerminalController? {
         guard let primaryController else { return nil }
-        guard let window = primaryController.window else { return primaryController }
+        guard let tabGroup = primaryController.windowHost else { return primaryController }
 
-        if let tabGroup = window.tabGroup,
-           let selectedController = tabGroup.selectedWindow?.windowController as? BaseTerminalController {
+        if let selectedController = tabGroup.selected {
             return selectedController
         }
 
@@ -241,7 +236,7 @@ extension ScriptWindow {
             return "controller-\(ObjectIdentifier(primaryController).hexString)"
         }
 
-        if let tabGroup = window.tabGroup {
+        if let tabGroup = primaryController.windowHost {
             return stableID(tabGroup: tabGroup)
         }
 
@@ -253,8 +248,8 @@ extension ScriptWindow {
         "window-\(ObjectIdentifier(window).hexString)"
     }
 
-    /// Stable ID for a native AppKit tab group.
-    static func stableID(tabGroup: NSWindowTabGroup) -> String {
+    /// Stable ID for an inner terminal tab group.
+    static func stableID(tabGroup: TerminalWindowHost) -> String {
         "tab-group-\(ObjectIdentifier(tabGroup).hexString)"
     }
 }

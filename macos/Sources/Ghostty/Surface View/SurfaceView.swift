@@ -47,12 +47,12 @@ extension Ghostty {
                         .focusedValue(\.ghosttySurfaceCellSize, surfaceView.cellSize)
                         .onReceive(pubBecomeKey) { notification in
                             guard let window = notification.object as? NSWindow else { return }
-                            guard let surfaceWindow = surfaceView.window else { return }
+                            guard let surfaceWindow = BaseTerminalController.controller(owning: surfaceView)?.window else { return }
                             windowFocus = surfaceWindow == window
                         }
                         .onReceive(pubResign) { notification in
                             guard let window = notification.object as? NSWindow else { return }
-                            guard let surfaceWindow = surfaceView.window else { return }
+                            guard let surfaceWindow = BaseTerminalController.controller(owning: surfaceView)?.window else { return }
                             if surfaceWindow == window {
                                 windowFocus = false
                             }

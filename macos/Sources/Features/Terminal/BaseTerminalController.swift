@@ -3,14 +3,8 @@ import SwiftUI
 import Combine
 import GhosttyKit
 
-/// A base class for windows that can contain Ghostty windows. This base class implements
-/// the bare minimum functionality that every terminal window in Ghostty should implement.
-///
-/// Usage: Specify this as the base class of your window controller for the window that contains
-/// a terminal. The window controller must also be the window delegate OR the window delegate
-/// functions on this base class must be called by your own custom delegate. For the terminal
-/// view the TerminalView SwiftUI view must be used and this class is the view model and
-/// delegate.
+/// Owns one terminal's view and split tree. TerminalWindowHost supplies the window
+/// and forwards window events to the selected terminal.
 ///
 /// Special considerations to implement:
 ///
@@ -26,12 +20,34 @@ import GhosttyKit
 ///
 /// The primary idea of all the behaviors we don't implement here are that subclasses may not
 /// want these behaviors.
-class BaseTerminalController: NSWindowController,
+class BaseTerminalController: NSViewController,
                               NSWindowDelegate,
                               TerminalViewDelegate,
                               TerminalViewModel,
                               ClipboardConfirmationViewDelegate,
                               FullscreenDelegate {
+    let tabID = UUID()
+    var keyEquivalent: String = ""
+    weak var windowHost: TerminalWindowHost?
+    var window: NSWindow? { windowHost?.window }
+    var windowNibName: NSNib.Name? { nil }
+    var isSelectedTerminal: Bool { windowHost?.selected === self }
+
+    override func loadView() {
+        view = TerminalViewContainer {
+            TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
+        }
+    }
+
+    func showWindow(_ sender: Any?) {
+        windowHost?.select(self)
+        windowHost?.showWindowSafely(sender)
+    }
+
+    func showWindowSafely(_ sender: Any?) {
+        showWindow(sender)
+    }
+
     /// Weak surface-to-controller ownership independent of AppKit's transient
     /// view and window attachment state.
     private static let surfaceControllers =
@@ -74,7 +90,10 @@ class BaseTerminalController: NSWindowController,
     private var clipboardConfirmation: ClipboardConfirmationController?
 
     /// Fullscreen state management.
-    private(set) var fullscreenStyle: FullscreenStyle?
+    var fullscreenStyle: FullscreenStyle? {
+        get { windowHost?.fullscreenStyle }
+        set { windowHost?.fullscreenStyle = newValue }
+    }
 
     /// Event monitor (see individual events for why)
     private var eventMonitor: Any?
@@ -146,7 +165,7 @@ class BaseTerminalController: NSWindowController,
         self.ghostty = ghostty
         self.derivedConfig = DerivedConfig(ghostty.config)
 
-        super.init(window: nil)
+        super.init(nibName: nil, bundle: nil)
 
         // Initialize our initial surface.
         guard let ghostty_app = ghostty.app else { preconditionFailure("app must be loaded") }
@@ -251,13 +270,13 @@ class BaseTerminalController: NSWindowController,
             return controller
         }
 
-        if let controller = surface.window?.windowController as? BaseTerminalController,
+        if let controller = surface.window?.terminalContentController,
            controller.surfaceTree.contains(surface) {
             return controller
         }
 
         return NSApp.windows
-            .compactMap { $0.windowController as? BaseTerminalController }
+            .flatMap { $0.terminalContentControllers }
             .first { $0.surfaceTree.contains(surface) }
     }
 
@@ -321,6 +340,7 @@ class BaseTerminalController: NSWindowController,
         guard surfaceTree.contains(view) else { return }
 
         // Move focus to the target surface and activate the window/app
+        windowHost?.select(self)
         DispatchQueue.main.async {
             Ghostty.moveFocus(to: view)
             view.window?.makeKeyAndOrderFront(nil)
@@ -352,7 +372,7 @@ class BaseTerminalController: NSWindowController,
         for surfaceView in surfaceTree {
             // Our focus state requires that this window is key and our currently
             // focused surface is the surface in this view.
-            let focused: Bool = (window?.isKeyWindow ?? false) &&
+            let focused: Bool = isSelectedTerminal && windowHost?.isWindowLoaded == true && (window?.isKeyWindow ?? false) &&
                 surfaceView == focusedSurface &&
                 surfaceView.isFirstResponder
             surfaceView.focusDidChange(focused)
@@ -386,6 +406,8 @@ class BaseTerminalController: NSWindowController,
         guard let window else {
             return .OK
         }
+
+        windowHost?.select(self)
 
         // If we need confirmation by any, show one confirmation for all windows
         // in the tab group.
@@ -795,7 +817,7 @@ class BaseTerminalController: NSWindowController,
         guard surfaceTree.contains(target) else { return }
 
         // Bring the window to front and focus the surface.
-        window?.makeKeyAndOrderFront(nil)
+        showWindow(nil)
 
         // We use a small delay to ensure this runs after any UI cleanup
         // (e.g., command palette restoring focus to its original surface).
@@ -861,7 +883,7 @@ class BaseTerminalController: NSWindowController,
         // If we're the main window receiving key input, then we want to avoid
         // calling this on our focused surface because that'll trigger a double
         // flagsChanged call.
-        if NSApp.mainWindow == window {
+        if isSelectedTerminal && NSApp.mainWindow == window {
             surfaces = surfaces.filter { $0 != focusedSurface }
         }
 
@@ -913,8 +935,11 @@ class BaseTerminalController: NSWindowController,
         applyTitleToWindow()
     }
 
+    var tabTitle: String { titleOverride.map { computeTitle(title: $0, bell: focusedSurface?.bell ?? false) } ?? lastComputedTitle }
+
     private func applyTitleToWindow() {
-        guard let window else { return }
+        windowHost?.updateTabStrip()
+        guard isSelectedTerminal, windowHost?.isWindowLoaded == true, let window else { return }
 
         if let titleOverride {
             window.title = computeTitle(
@@ -927,7 +952,7 @@ class BaseTerminalController: NSWindowController,
     }
 
     func pwdDidChange(to: URL?) {
-        guard let window else { return }
+        guard isSelectedTerminal, let window else { return }
 
         if derivedConfig.macosTitlebarProxyIcon == .visible {
             // Use the 'to' URL directly
@@ -938,7 +963,7 @@ class BaseTerminalController: NSWindowController,
     }
 
     func cellSizeDidChange(to: NSSize) {
-        guard derivedConfig.windowStepResize else { return }
+        guard isSelectedTerminal, derivedConfig.windowStepResize else { return }
         // Stage manager can sometimes present windows in such a way that the
         // cell size is temporarily zero due to the window being tiny. We can't
         // set content resize increments to this value, so avoid an assertion failure.
@@ -1000,8 +1025,7 @@ class BaseTerminalController: NSWindowController,
         // Source is not in our tree - search other windows
         var sourceController: BaseTerminalController?
         var sourceNode: SplitTree<Ghostty.SurfaceView>.Node?
-        for window in NSApp.windows {
-            guard let controller = window.windowController as? BaseTerminalController else { continue }
+        for controller in NSApp.windows.flatMap({ $0.terminalContentControllers }) {
             guard controller !== self else { continue }
             if let node = controller.surfaceTree.root?.node(view: source) {
                 sourceController = controller
@@ -1065,9 +1089,7 @@ class BaseTerminalController: NSWindowController,
         guard let window, !window.styleMask.contains(.fullScreen) else { return }
 
         let newValue = !isBackgroundOpaque
-        let controllers = NSApplication.shared.windows.compactMap {
-            $0.windowController as? BaseTerminalController
-        }
+        let controllers = NSApplication.shared.windows.flatMap { $0.terminalContentControllers }
 
         for controller in controllers {
             controller.isBackgroundOpaque = newValue
@@ -1097,7 +1119,7 @@ class BaseTerminalController: NSWindowController,
         // toggle it next time. If it changed and we're not in fullscreen we can just
         // switch the handler.
         var newStyle = mode.style(for: window)
-        newStyle?.delegate = self
+        newStyle?.delegate = windowHost
         old: if let oldStyle = self.fullscreenStyle {
             // If we're not fullscreen, we can nil it out so we get the new style
             if !oldStyle.isFullscreen {
@@ -1152,8 +1174,14 @@ class BaseTerminalController: NSWindowController,
 
     // MARK: NSWindowController
 
-    override func windowDidLoad() {
-        super.windowDidLoad()
+    func windowDidLoadForTab() {
+        if focusedSurface == nil { focusedSurface = surfaceTree.first }
+        (view as? TerminalViewContainer)?.initialContentSize = focusedSurface?.initialSize
+        updateOverlayIsVisible = defaultUpdateOverlayVisibility()
+    }
+
+    func windowDidLoad() {
+        windowDidLoadForTab()
 
         // Setup our undo manager.
 
@@ -1165,11 +1193,8 @@ class BaseTerminalController: NSWindowController,
         // somehow we don't do this.
         if fullscreenStyle == nil {
             fullscreenStyle = NativeFullscreen(window)
-            fullscreenStyle?.delegate = self
+            fullscreenStyle?.delegate = windowHost
         }
-
-        // Set our update overlay state
-        updateOverlayIsVisible = defaultUpdateOverlayVisibility()
     }
 
     func defaultUpdateOverlayVisibility() -> Bool {
@@ -1228,9 +1253,7 @@ class BaseTerminalController: NSWindowController,
         return false
     }
 
-    func windowWillClose(_ notification: Notification) {
-        guard let window else { return }
-
+    func terminalDidClose() {
         for surfaceView in surfaceTree {
             cancelPendingClipboardConfirmation(for: surfaceView)
         }
@@ -1246,13 +1269,17 @@ class BaseTerminalController: NSWindowController,
             )
         }
 
-        // I don't know if this is required anymore. We previously had a ref cycle between
-        // the view and the window so we had to nil this out to break it but I think this
-        // may now be resolved. We should verify that no memory leaks and we can remove this.
-        window.contentView = nil
+        if isViewLoaded {
+            view.removeFromSuperview()
+            view = NSView()
+        }
 
         // Make sure we clean up all our undos
-        window.undoManager?.removeAllActions(withTarget: self)
+        window?.undoManager?.removeAllActions(withTarget: self)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        terminalDidClose()
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -1282,8 +1309,8 @@ class BaseTerminalController: NSWindowController,
         syncSurfaceTreeOcclusionState()
     }
 
-    private func syncSurfaceTreeOcclusionState() {
-        let visible = self.window?.occlusionState.contains(.visible) ?? false
+    func syncSurfaceTreeOcclusionState() {
+        let visible = isSelectedTerminal && windowHost?.isWindowLoaded == true && (window?.occlusionState.contains(.visible) ?? false)
         for view in surfaceTree {
             if let surface = view.surface, view.isWindowVisible != visible {
                 ghostty_surface_set_occlusion(surface, visible)
@@ -1318,17 +1345,6 @@ class BaseTerminalController: NSWindowController,
     }
 
     @IBAction func changeTabTitle(_ sender: Any) {
-        if let targetWindow = window {
-            let inlineHostWindow =
-                targetWindow.tabbedWindows?
-                    .first(where: { $0.tabBarView != nil }) as? TerminalWindow
-                ?? (targetWindow as? TerminalWindow)
-
-            if let inlineHostWindow, inlineHostWindow.beginInlineTabTitleEdit(for: targetWindow) {
-                return
-            }
-        }
-
         promptTabTitle()
     }
 

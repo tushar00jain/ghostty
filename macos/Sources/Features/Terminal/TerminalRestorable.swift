@@ -146,45 +146,32 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         }
 
         // Decode the state. If we can't decode the state, then we can't restore.
-        guard let state = TerminalRestorableState(coder: state) else {
+        guard let saved = TerminalWindowRestorableState(coder: state), !saved.tabs.isEmpty else {
             completionHandler(nil, TerminalRestoreError.stateDecodeFailed)
             return
         }
 
-        // The window creation has to go through our terminalManager so that it
-        // can be found for events from libghostty. This uses the low-level
-        // createWindow so that AppKit can place the window wherever it should
-        // be.
-        let c = TerminalController.init(
-            appDelegate.ghostty,
-            withSurfaceTree: state.surfaceTree)
+        var host: TerminalWindowHost?
+        let terminals = saved.tabs.map { state in
+            let controller = TerminalController(appDelegate.ghostty,
+                                                withSurfaceTree: state.surfaceTree,
+                                                tabHost: host)
+            host = controller.windowHost
+            controller.titleOverride = state.titleOverride
+            controller.focusedSurface = controller.surfaceTree.first { $0.id.uuidString == state.focusedSurface }
+                ?? controller.surfaceTree.first
+            return controller
+        }
+        let index = min(max(saved.selectedTab, 0), terminals.count - 1)
+        let c = terminals[index]
+        let state = saved.tabs[index]
+        host?.select(c)
         guard let window = c.window else {
             completionHandler(nil, TerminalRestoreError.windowDidNotLoad)
             return
         }
-
-        // Restore our tab color and avoid unnecessary `invalidateRestorableState` calls
-        if let tabColor = state.tabColor {
-            (window as? TerminalWindow)?.tabColor = tabColor
-        }
-
-        // Restore the tab title override
-        c.titleOverride = state.titleOverride
-
-        // Setup our restored state on the controller
-        // Find the focused surface in surfaceTree
-        if let focusedStr = state.focusedSurface {
-            var foundView: Ghostty.SurfaceView?
-            for view in c.surfaceTree where view.id.uuidString == focusedStr {
-                foundView = view
-                break
-            }
-
-            if let view = foundView {
-                c.focusedSurface = view
-                restoreFocus(to: view, inWindow: window)
-            }
-        }
+        if let tabColor = state.tabColor { (window as? TerminalWindow)?.tabColor = tabColor }
+        if let focused = c.focusedSurface { restoreFocus(to: focused, inWindow: window) }
 
         completionHandler(window, nil)
         guard let mode = state.effectiveFullscreenMode, mode != .native else {
